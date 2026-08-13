@@ -199,8 +199,13 @@ fn set(target: &str) -> ExitCode {
         }
     };
 
-    // 已是目标且 active → 幂等 no-op
-    if is_active(&target_entry.service) {
+    // 目标 active 且其他 shell 均 inactive → 幂等 no-op。
+    // 注意：即使目标 active，若有其他 shell 在跑（如 graphical-session.target 把 Noctalia 拉起），
+    // 仍需 stop_all 清理，确保同一时刻只有一个 shell（双顶栏/DBus 冲突）。
+    let others_active = shells
+        .iter()
+        .any(|s| s.name != target && is_active(&s.service));
+    if is_active(&target_entry.service) && !others_active {
         println!("{target} 已在运行。");
         write_current(target);
         return ExitCode::SUCCESS;
