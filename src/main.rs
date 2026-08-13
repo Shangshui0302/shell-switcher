@@ -1,11 +1,14 @@
-// shell-switcher — runtime switch between desktop shells on Hyprland/niri.
+// shell-switcher — runtime switch between desktop shells on Wayland compositors.
 //
 // 设计:
 //   每个 shell 是一个 systemd user service，挂 graphical-session.target 上下文，
 //   但同一时刻只有一个在跑（都抢 org.freedesktop.Notifications DBus 名）。
 //   set <name>: stop 全部 shell → 轮询确认都 inactive → start 目标 → 写 current 标记。
 //   boot:      读 current 标记启动对应 shell（compositor autostart / shell-starter 入口）。
-//   防呆:      非 Hyprland/niri 会话拒绝切换；启动失败回退默认 shell（noctalia）。
+//   防呆:      非受支持 compositor 会话拒绝切换；启动失败回退默认 shell（config.toml 的 `default`）。
+//
+//   通用性：本工具不绑定任何具体 shell/compositor。默认 shell 由 config.toml 的 `default`
+//   字段指定（缺省取第一个），compositor 支持列表见 detect_compositor。
 
 #[macro_use]
 extern crate rust_i18n;
@@ -19,7 +22,6 @@ use std::process::{Command, ExitCode};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
-const DEFAULT_SHELL: &str = "noctalia";
 const CONFIG_REL: &str = ".config/shell-switcher/config.toml";
 const CURRENT_REL: &str = ".config/shell-switcher/current";
 const STOP_TIMEOUT: Duration = Duration::from_secs(10);
@@ -27,6 +29,8 @@ const START_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(serde::Deserialize, Debug)]
 struct Config {
+    /// 默认 shell 名（可选，缺省取第一个 [[shell]]）
+    default: Option<String>,
     shell: Vec<ShellEntry>,
 }
 
@@ -72,7 +76,8 @@ fn main() -> ExitCode {
     }
 }
 
-/// 检测当前 compositor。非 Hyprland/niri 返回 None（防呆）。
+/// 检测当前 compositor。不在支持列表内返回 None（防呆）。
+/// 新增 compositor：在此加环境变量分支即可（如 Sway 用 SWAYSOCK）。
 fn detect_compositor() -> Option<&'static str> {
     if env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok() {
         Some("hyprland")
@@ -95,22 +100,32 @@ fn current_path() -> PathBuf {
     home_dir().join(CURRENT_REL)
 }
 
-/// 读 config.toml；缺失/解析失败回退默认 [noctalia]。
-fn load_shells() -> Vec<ShellEntry> {
-    match fs::read_to_string(config_path()) {
-        Ok(raw) => match toml::from_str::<Config>(&raw) {
-            Ok(cfg) if !cfg.shell.is_empty() => cfg.shell,
-            _ => default_shells(),
-        },
-        Err(_) => default_shells(),
-    }
+/// 读取并解析 config.toml；缺失/解析失败返回 None。
+fn load_config() -> Option<Config> {
+    let raw = fs::read_to_string(config_path()).ok()?;
+    toml::from_str::<Config>(&raw).ok()
 }
 
-fn default_shells() -> Vec<ShellEntry> {
-    vec![ShellEntry {
-        name: DEFAULT_SHELL.into(),
-        service: format!("{DEFAULT_SHELL}.service"),
-    }]
+/// 可用 shell 列表（config.toml 的 [[shell]]）。
+fn load_shells() -> Vec<ShellEntry> {
+    load_config().map(|c| c.shell).unwrap_or_default()
+}
+
+/// 默认 shell：`default` 指定的 shell，未指定时取第一个；无 shell 时 None。
+fn default_shell(shells: &[ShellEntry]) -> Option<&ShellEntry> {
+    let cfg = load_config();
+    let default = cfg.as_ref().and_then(|c| c.default.as_deref());
+    shells
+        .iter()
+        .find(|s| Some(s.name.as_str()) == default)
+        .or_else(|| shells.first())
+}
+
+/// 默认 shell 名（用于错误消息等）。
+fn default_name(shells: &[ShellEntry]) -> String {
+    default_shell(shells)
+        .map(|s| s.name.clone())
+        .unwrap_or_default()
 }
 
 fn find_shell<'a>(shells: &'a [ShellEntry], name: &str) -> Option<&'a ShellEntry> {
@@ -217,6 +232,11 @@ fn set(target: &str) -> ExitCode {
     }
 
     let shells = load_shells();
+    if shells.is_empty() {
+        eprintln!("{}", t!("no_shells", config = config_path().display()));
+        return ExitCode::from(1);
+    }
+
     let target_entry = match find_shell(&shells, target) {
         Some(e) => e.clone(),
         None => {
@@ -226,7 +246,7 @@ fn set(target: &str) -> ExitCode {
     };
 
     // 目标 active 且其他 shell 均 inactive → 幂等 no-op。
-    // 注意：即使目标 active，若有其他 shell 在跑（如 graphical-session.target 把 Noctalia 拉起），
+    // 注意：即使目标 active，若有其他 shell 在跑（如 graphical-session.target 把默认拉起），
     // 仍需 stop_all 清理，确保同一时刻只有一个 shell（双顶栏/DBus 冲突）。
     let others_active = shells
         .iter()
@@ -239,9 +259,8 @@ fn set(target: &str) -> ExitCode {
 
     println!("{}", t!("stopping_all"));
     if !stop_all_shells(&shells) {
-        eprintln!("{}", t!("stop_failed", default = DEFAULT_SHELL));
-        let default = find_shell(&shells, DEFAULT_SHELL).cloned();
-        if let Some(d) = default {
+        eprintln!("{}", t!("stop_failed", default = default_name(&shells)));
+        if let Some(d) = default_shell(&shells) {
             let _ = start_service(&d.service);
         }
         return ExitCode::from(1);
@@ -249,11 +268,13 @@ fn set(target: &str) -> ExitCode {
 
     println!("{}", t!("starting", target = target));
     if !start_service(&target_entry.service) {
-        eprintln!("{}", t!("start_failed", target = target, default = DEFAULT_SHELL));
-        let default = find_shell(&shells, DEFAULT_SHELL).cloned();
-        if let Some(d) = default {
+        eprintln!(
+            "{}",
+            t!("start_failed", target = target, default = default_name(&shells))
+        );
+        if let Some(d) = default_shell(&shells).cloned() {
             let _ = start_service(&d.service);
-            write_current(DEFAULT_SHELL);
+            write_current(&d.name);
         }
         return ExitCode::from(1);
     }
@@ -275,23 +296,46 @@ fn set(target: &str) -> ExitCode {
 }
 
 /// compositor autostart / shell-starter 入口：读 current 标记启动对应 shell。
+/// current 标记缺失或无效时，启动默认 shell（config.toml 的 `default` 或第一个）。
 fn boot() -> ExitCode {
     if detect_compositor().is_none() {
         eprintln!("{}", t!("boot_skip"));
         return ExitCode::from(0);
     }
     let shells = load_shells();
-    let name = read_current().filter(|n| find_shell(&shells, n).is_some()).unwrap_or_else(|| DEFAULT_SHELL.into());
-    let entry = find_shell(&shells, &name).expect("DEFAULT_SHELL 必在 config");
-    println!("{}", t!("boot_starting", name = name, service = entry.service));
+    if shells.is_empty() {
+        eprintln!("{}", t!("no_shells", config = config_path().display()));
+        return ExitCode::from(1);
+    }
+
+    let fallback = default_shell(&shells).map(|s| s.name.clone());
+    let name = read_current()
+        .filter(|n| find_shell(&shells, n).is_some())
+        .or(fallback);
+
+    let entry = match name.as_deref().and_then(|n| find_shell(&shells, n)) {
+        Some(e) => e.clone(),
+        None => {
+            eprintln!("{}", t!("no_shells"));
+            return ExitCode::from(1);
+        }
+    };
+    println!(
+        "{}",
+        t!("boot_starting", name = entry.name, service = entry.service)
+    );
     let ok = start_service(&entry.service);
     ExitCode::from(if ok { 0 } else { 1 })
 }
 
 fn help() -> ExitCode {
+    let shells = load_shells();
+    let default = default_shell(&shells)
+        .map(|s| s.name.as_str())
+        .unwrap_or("-");
     println!(
         "{}",
-        t!("help_text", config = config_path().display(), default = DEFAULT_SHELL)
+        t!("help_text", config = config_path().display(), default = default)
     );
     ExitCode::SUCCESS
 }

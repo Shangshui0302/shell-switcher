@@ -10,7 +10,7 @@
 
 - **一条命令切换**：`shell-switcher set <name>`，内部 stop-all → 等待退出 → start 目标
 - **声明式注册 shell**：改 `config.toml` 即可添加 shell，无需改代码、无需重编译
-- **防呆**：非 Hyprland/niri 会话拒绝切换；切换失败自动回退默认 shell（`noctalia`）
+- **防呆**：非 Hyprland/niri 会话拒绝切换；切换失败自动回退默认 shell（config.toml 的 `default`，缺省取第一个）
 - **幂等**：目标已在运行且无其他 shell 在跑时直接 no-op
 - **启动恢复**：`boot` 入口读 `current` 标记，用于 compositor autostart 恢复上次选择的 shell
 - **Shell 补全**：bash / zsh / fish 补全随包安装到标准目录（`set` 动态补全 config.toml 里的 shell 名）
@@ -88,9 +88,11 @@ cargo install --git https://github.com/<user>/shell-switcher
 
 ## 配置
 
-配置文件：`~/.config/shell-switcher/config.toml`（默认路径；缺失或解析失败时回退到只含默认 shell 的内置配置）。
+配置文件：`~/.config/shell-switcher/config.toml`。缺失或解析失败时命令会明确报错（提示配置文件路径），不静默使用内置假设。
 
 ```toml
+default = "noctalia"        # 默认 shell（可选，缺省取第一个 [[shell]]）
+
 [[shell]]
 name = "noctalia"
 service = "noctalia.service"
@@ -104,6 +106,7 @@ service = "dms.service"
 
 | 字段 | 说明 |
 |------|------|
+| `default` | 默认 shell 名（可选）：`boot` 无 current 标记时、切换失败回退时使用；缺省取第一个 `[[shell]]` |
 | `name` | 切换器里的 shell 标识（`set <name>` 用这个名字） |
 | `service` | 对应的 systemd user service 名（必须含 `.service` 后缀） |
 

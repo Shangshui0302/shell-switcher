@@ -15,6 +15,7 @@ switched: "Switched to %{target}."
 start_timeout: "%{target} did not become active in time, it may fail to start."
 boot_skip: "Not a Hyprland/niri session, skipping shell start."
 boot_starting: "boot: starting %{name} (%{service})"
+no_shells: "No shells found, check %{config}"
 help_text: |-
   shell-switcher — runtime desktop shell switcher
 
@@ -26,5 +27,5 @@ help_text: |-
     shell-switcher help                This help
 
   Config: %{config}
-    shell-switcher only orchestrates the switch; systemd services are declared by your NixOS config.
+    Default shell is set by `default` in config.toml (first entry if unset); systemd services are declared by your config.
   Safety: refuses to switch outside Hyprland/niri; falls back to %{default} on failure.
