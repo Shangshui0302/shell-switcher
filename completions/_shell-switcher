@@ -1,0 +1,27 @@
+#compdef shell-switcher
+
+_shell-switcher() {
+    local -a commands
+    commands=(
+        'list:列出可用 shell'
+        'current:显示当前 active 的 shell'
+        'set:切换到指定 shell'
+        'boot:读 current 标记启动（shell-starter 入口）'
+        'help:帮助'
+    )
+
+    if (( CURRENT == 2 )); then
+        _describe 'command' commands
+        return
+    fi
+
+    # set 子命令：动态补全 config.toml 里的 shell 名
+    if (( CURRENT == 3 )) && [[ $words[2] == "set" ]]; then
+        local -a shells
+        shells=(${(f)"$(shell-switcher list 2>/dev/null)"})
+        _describe 'shell' shells
+        return
+    fi
+}
+
+_shell-switcher "$@"

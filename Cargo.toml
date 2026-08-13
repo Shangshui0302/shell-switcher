@@ -7,3 +7,4 @@ description = "Runtime switch between desktop shells (Noctalia/DMS/caelestia/Per
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+rust-i18n = "3"

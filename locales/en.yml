@@ -1,0 +1,30 @@
+_version: 1
+unknown_command: "Unknown command: %{other}"
+stop_timeout: "Timeout: these services are still active: %{still}"
+not_compositor: "Not a Hyprland/niri session, shell-switcher is not applicable."
+current_none: "none"
+compositor_label: "compositor: %{compositor}"
+set_denied: "Not a Hyprland/niri session (XDG_CURRENT_DESKTOP=%{desktop}), refusing to switch."
+unknown_shell: "Unknown shell: %{target} (run `shell-switcher list`)"
+already_running: "%{target} is already running."
+stopping_all: "Stopping all shells…"
+stop_failed: "Some shells failed to stop, aborting switch, falling back to %{default}."
+starting: "Starting %{target}…"
+start_failed: "%{target} failed to start, falling back to %{default}."
+switched: "Switched to %{target}."
+start_timeout: "%{target} did not become active in time, it may fail to start."
+boot_skip: "Not a Hyprland/niri session, skipping shell start."
+boot_starting: "boot: starting %{name} (%{service})"
+help_text: |-
+  shell-switcher — runtime desktop shell switcher
+
+  Usage:
+    shell-switcher list                List available shells
+    shell-switcher current             Show the currently active shell
+    shell-switcher set <name>          Switch to a shell (stop-all → await → start)
+    shell-switcher boot                shell-starter entry (start from current marker)
+    shell-switcher help                This help
+
+  Config: %{config}
+    shell-switcher only orchestrates the switch; systemd services are declared by your NixOS config.
+  Safety: refuses to switch outside Hyprland/niri; falls back to %{default} on failure.

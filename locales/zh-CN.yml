@@ -1,0 +1,30 @@
+_version: 1
+unknown_command: "未知命令: %{other}"
+stop_timeout: "超时: 以下 service 仍未退出: %{still}"
+not_compositor: "非 Hyprland/niri 会话，shell-switcher 不适用。"
+current_none: "none"
+compositor_label: "compositor: %{compositor}"
+set_denied: "非 Hyprland/niri 会话（XDG_CURRENT_DESKTOP=%{desktop}），拒绝切换。"
+unknown_shell: "未知 shell: %{target}（shell-switcher list 查看）"
+already_running: "%{target} 已在运行。"
+stopping_all: "停止所有 shell…"
+stop_failed: "有 shell 未能停止，放弃切换，尝试回退 %{default}。"
+starting: "启动 %{target}…"
+start_failed: "%{target} 启动失败，回退 %{default}。"
+switched: "已切换到 %{target}。"
+start_timeout: "%{target} 未在超时内进入 active，可能起不来。"
+boot_skip: "非 Hyprland/niri 会话，跳过 shell 启动。"
+boot_starting: "boot: 启动 %{name}（%{service}）"
+help_text: |-
+  shell-switcher — 桌面 shell 运行时切换器
+
+  用法:
+    shell-switcher list                列出可用 shell
+    shell-switcher current             显示当前 active 的 shell
+    shell-switcher set <name>          切换到指定 shell（stop-all → await → start）
+    shell-switcher boot                shell-starter 入口（读 current 标记启动）
+    shell-switcher help                本帮助
+
+  配置: %{config}
+    shell-switcher 只做切换，shell 的 systemd service 由 NixOS 仓库声明。
+  防呆: 非 Hyprland/niri 会话拒绝切换；切换失败自动回退 %{default}。

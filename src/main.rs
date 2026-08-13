@@ -7,6 +7,11 @@
 //   boot:      读 current 标记启动对应 shell（compositor autostart / shell-starter 入口）。
 //   防呆:      非 Hyprland/niri 会话拒绝切换；启动失败回退默认 shell（noctalia）。
 
+#[macro_use]
+extern crate rust_i18n;
+
+i18n!("locales", fallback = "zh-CN");
+
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -31,7 +36,25 @@ struct ShellEntry {
     service: String,
 }
 
+/// 按系统 locale 选语言：含 zh 用中文，否则英文。
+/// 优先级 LC_ALL → LC_MESSAGES → LANG，空值视为未设置。
+fn detect_locale() -> &'static str {
+    let lang = ["LC_ALL", "LC_MESSAGES", "LANG"]
+        .iter()
+        .filter_map(|v| env::var(v).ok())
+        .find(|s| !s.is_empty())
+        .unwrap_or_default()
+        .to_lowercase();
+    if lang.contains("zh") {
+        "zh-CN"
+    } else {
+        "en"
+    }
+}
+
 fn main() -> ExitCode {
+    rust_i18n::set_locale(detect_locale());
+
     let args: Vec<String> = env::args().collect();
     let cmd = args.get(1).map(String::as_str).unwrap_or("help");
 
@@ -42,7 +65,7 @@ fn main() -> ExitCode {
         "boot" => boot(),
         "help" => help(),
         other => {
-            eprintln!("未知命令: {other}");
+            eprintln!("{}", t!("unknown_command", other = other));
             help();
             ExitCode::from(2)
         }
@@ -133,7 +156,7 @@ fn stop_all_shells(shells: &[ShellEntry]) -> bool {
                 .filter(|s| is_active(&s.service))
                 .map(|s| s.service.clone())
                 .collect::<Vec<_>>();
-            eprintln!("超时: 以下 service 仍未退出: {still:?}");
+            eprintln!("{}", t!("stop_timeout", still = format!("{:?}", still)));
             return false;
         }
         sleep(Duration::from_millis(200));
@@ -164,7 +187,7 @@ fn list() -> ExitCode {
 
 fn current() -> ExitCode {
     if detect_compositor().is_none() {
-        eprintln!("非 Hyprland/niri 会话，shell-switcher 不适用。");
+        eprintln!("{}", t!("not_compositor"));
         return ExitCode::from(1);
     }
     let shells = load_shells();
@@ -174,17 +197,20 @@ fn current() -> ExitCode {
             return ExitCode::SUCCESS;
         }
     }
-    println!("none");
+    println!("{}", t!("current_none"));
     ExitCode::SUCCESS
 }
 
 fn set(target: &str) -> ExitCode {
     match detect_compositor() {
-        Some(c) => println!("compositor: {c}"),
+        Some(c) => println!("{}", t!("compositor_label", compositor = c)),
         None => {
             eprintln!(
-                "非 Hyprland/niri 会话（XDG_CURRENT_DESKTOP={}），拒绝切换。",
-                env::var("XDG_CURRENT_DESKTOP").unwrap_or_default()
+                "{}",
+                t!(
+                    "set_denied",
+                    desktop = env::var("XDG_CURRENT_DESKTOP").unwrap_or_default()
+                )
             );
             return ExitCode::from(1);
         }
@@ -194,7 +220,7 @@ fn set(target: &str) -> ExitCode {
     let target_entry = match find_shell(&shells, target) {
         Some(e) => e.clone(),
         None => {
-            eprintln!("未知 shell: {target}（shell-switcher list 查看）");
+            eprintln!("{}", t!("unknown_shell", target = target));
             return ExitCode::from(2);
         }
     };
@@ -206,14 +232,14 @@ fn set(target: &str) -> ExitCode {
         .iter()
         .any(|s| s.name != target && is_active(&s.service));
     if is_active(&target_entry.service) && !others_active {
-        println!("{target} 已在运行。");
+        println!("{}", t!("already_running", target = target));
         write_current(target);
         return ExitCode::SUCCESS;
     }
 
-    println!("停止所有 shell…");
+    println!("{}", t!("stopping_all"));
     if !stop_all_shells(&shells) {
-        eprintln!("有 shell 未能停止，放弃切换，尝试回退 {DEFAULT_SHELL}。");
+        eprintln!("{}", t!("stop_failed", default = DEFAULT_SHELL));
         let default = find_shell(&shells, DEFAULT_SHELL).cloned();
         if let Some(d) = default {
             let _ = start_service(&d.service);
@@ -221,9 +247,9 @@ fn set(target: &str) -> ExitCode {
         return ExitCode::from(1);
     }
 
-    println!("启动 {target}…");
+    println!("{}", t!("starting", target = target));
     if !start_service(&target_entry.service) {
-        eprintln!("{target} 启动失败，回退 {DEFAULT_SHELL}。");
+        eprintln!("{}", t!("start_failed", target = target, default = DEFAULT_SHELL));
         let default = find_shell(&shells, DEFAULT_SHELL).cloned();
         if let Some(d) = default {
             let _ = start_service(&d.service);
@@ -236,12 +262,12 @@ fn set(target: &str) -> ExitCode {
     let deadline = Instant::now() + START_TIMEOUT;
     loop {
         if is_active(&target_entry.service) {
-            println!("已切换到 {target}。");
+            println!("{}", t!("switched", target = target));
             write_current(target);
             return ExitCode::SUCCESS;
         }
         if Instant::now() >= deadline {
-            eprintln!("{target} 未在超时内进入 active，可能起不来。");
+            eprintln!("{}", t!("start_timeout", target = target));
             return ExitCode::from(1);
         }
         sleep(Duration::from_millis(200));
@@ -251,33 +277,21 @@ fn set(target: &str) -> ExitCode {
 /// compositor autostart / shell-starter 入口：读 current 标记启动对应 shell。
 fn boot() -> ExitCode {
     if detect_compositor().is_none() {
-        eprintln!("非 Hyprland/niri 会话，跳过 shell 启动。");
+        eprintln!("{}", t!("boot_skip"));
         return ExitCode::from(0);
     }
     let shells = load_shells();
     let name = read_current().filter(|n| find_shell(&shells, n).is_some()).unwrap_or_else(|| DEFAULT_SHELL.into());
     let entry = find_shell(&shells, &name).expect("DEFAULT_SHELL 必在 config");
-    println!("boot: 启动 {name}（{service}）", service = entry.service);
+    println!("{}", t!("boot_starting", name = name, service = entry.service));
     let ok = start_service(&entry.service);
     ExitCode::from(if ok { 0 } else { 1 })
 }
 
 fn help() -> ExitCode {
     println!(
-        "shell-switcher — 桌面 shell 运行时切换器
-
-用法:
-  shell-switcher list                列出可用 shell
-  shell-switcher current             显示当前 active 的 shell
-  shell-switcher set <name>          切换到指定 shell（stop-all → await → start）
-  shell-switcher boot                shell-starter 入口（读 current 标记启动）
-  shell-switcher help                本帮助
-
-配置: {config}
-  shell-switcher 只做切换，shell 的 systemd service 由 NixOS 仓库声明。
-防呆: 非 Hyprland/niri 会话拒绝切换；切换失败自动回退 {default}。",
-        config = config_path().display(),
-        default = DEFAULT_SHELL
+        "{}",
+        t!("help_text", config = config_path().display(), default = DEFAULT_SHELL)
     );
     ExitCode::SUCCESS
 }
