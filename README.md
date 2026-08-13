@@ -13,7 +13,7 @@
 - **防呆**：非 Hyprland/niri 会话拒绝切换；切换失败自动回退默认 shell（config.toml 的 `default`，缺省取第一个）
 - **幂等**：目标已在运行且无其他 shell 在跑时直接 no-op
 - **启动恢复**：`boot` 入口读 `current` 标记，用于 compositor autostart 恢复上次选择的 shell
-- **Shell 补全**：bash / zsh / fish 补全随包安装到标准目录（`set` 动态补全 config.toml 里的 shell 名）
+- **Shell 补全**：bash / zsh / fish 补全随 Nix 包自动安装，cargo/源码安装手动放置（见「安装」）
 - **国际化**：中文 / 英文按系统 locale 自动切换（locale 含 `zh` → 中文，其他 → 英文）
 
 ## 工作原理
@@ -32,7 +32,41 @@
 
 ## 安装
 
-### Nix flake（推荐）
+shell-switcher 是普通 Rust 二进制，不依赖 Nix。要求 Rust 工具链（edition 2021），依赖仅 `serde` + `toml`，任何有 systemd user session + Hyprland/niri 的发行版都能用。
+
+### Cargo 安装（推荐，任意发行版）
+
+```bash
+cargo install --path .         # 从本地源码目录安装
+# 或直接从 git 安装
+cargo install --git https://github.com/Shangshui0302/shell-switcher
+```
+
+### 源码构建（通用）
+
+```bash
+git clone https://github.com/Shangshui0302/shell-switcher
+cd shell-switcher
+cargo build --release
+install -Dm755 target/release/shell-switcher ~/.local/bin/
+```
+
+cargo 安装 / 源码构建不会自动放置 shell 补全，需要时手动复制到对应目录：
+
+```bash
+install -Dm644 completions/shell-switcher.bash ~/.local/share/bash-completion/completions/shell-switcher
+install -Dm644 completions/_shell-switcher ~/.local/share/zsh/site-functions/_shell-switcher
+install -Dm644 completions/shell-switcher.fish ~/.local/share/fish/vendor_completions.d/shell-switcher.fish
+```
+
+装完后：
+
+1. 写 `~/.config/shell-switcher/config.toml`（格式见「配置」）。
+2. 用发行版自己的方式声明各 shell 的 **systemd user service**（`/etc/systemd/user/` 或 `~/.config/systemd/user/`），并确保可切换的 shell 互斥（`wantedBy` 不自动起，由切换器启停）。
+
+前提：必须运行在 Hyprland/niri 会话内，否则 `set`/`current` 会拒绝执行。
+
+### Nix flake（NixOS / Nix 用户可选）
 
 flake 里用 `rustPlatform.buildRustPackage` 打包，产物在 `packages.default`：
 
@@ -46,7 +80,7 @@ nix develop                  # 开发环境（rustc/cargo/rust-analyzer/clippy�
 ```nix
 # flake.nix
 inputs.shell-switcher = {
-  url = "github:<user>/shell-switcher";
+  url = "github:Shangshui0302/shell-switcher";
   inputs.nixpkgs.follows = "nixpkgs";
 };
 
@@ -55,36 +89,6 @@ home.packages = [
   inputs.shell-switcher.packages.${pkgs.system}.default
 ];
 ```
-
-### Cargo
-
-```bash
-cargo install --path .
-```
-
-要求 Rust 工具链（edition 2021），依赖仅 `serde` + `toml`。
-
-### 其他发行版（通用）
-
-shell-switcher 是普通 Rust 二进制，不依赖 Nix。任何有 systemd user session + Hyprland/niri 的发行版都能用：
-
-```bash
-# 源码构建（需要 Rust 工具链）
-git clone https://github.com/<user>/shell-switcher
-cd shell-switcher
-cargo build --release
-install -Dm755 target/release/shell-switcher ~/.local/bin/
-
-# 或直接从 git 安装（需 cargo）
-cargo install --git https://github.com/<user>/shell-switcher
-```
-
-装完后：
-
-1. 写 `~/.config/shell-switcher/config.toml`（格式见「配置」）。
-2. 用发行版自己的方式声明各 shell 的 **systemd user service**（`/etc/systemd/user/` 或 `~/.config/systemd/user/`），并确保可切换的 shell 互斥（`wantedBy` 不自动起，由切换器启停）。
-
-前提：必须运行在 Hyprland/niri 会话内，否则 `set`/`current` 会拒绝执行。
 
 ## 配置
 
@@ -140,7 +144,7 @@ shell-switcher boot
 
 shell 的注册**完全声明式**，加一行 `[[shell]]` 即可，无需改代码：
 
-1. 确保该 shell 的 systemd user service 已存在（由 NixOS / Home Manager 声明）。
+1. 确保该 shell 的 systemd user service 已存在：unit 文件放 `/etc/systemd/user/`（系统级）或 `~/.config/systemd/user/`（用户级），再 `systemctl --user daemon-reload`；NixOS/Home Manager 用户也可用 `systemd.user.services` 声明。
 2. 在 `config.toml` 加映射：
 
 ```toml
