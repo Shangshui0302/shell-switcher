@@ -1,12 +1,32 @@
 # shell-switcher
 
+[English](README_EN.md) | **简体中文**
+
+<div align="center">
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Language: Rust](https://img.shields.io/badge/Language-Rust-orange.svg)](https://www.rust-lang.org/) [![Stars](https://img.shields.io/github/stars/Shangshui0302/shell-switcher)](https://github.com/Shangshui0302/shell-switcher) [![Forks](https://img.shields.io/github/forks/Shangshui0302/shell-switcher)](https://github.com/Shangshui0302/shell-switcher)
+
+</div>
+
 运行时切换桌面 shell（顶栏面板）的小工具，面向 Hyprland / niri。
 
 多个桌面 shell 都抢占 `org.freedesktop.Notifications` DBus、都画顶栏，不能同时跑。shell-switcher 负责同一时刻只让一个 shell 运行：切走时把旧的干净停掉、再启动目标，失败自动回退默认 shell，不用手工 `systemctl --user stop/start`。
 
 > **关于本项目**：一个 AI vibe 的小脚本——单文件 Rust、功能克制、个人自用顺手写的，不是严肃的正式工具。它存在的意义就是"够用就行"，所以代码结构很简单、取舍很直接（见「限制」）。想改就 fork，欢迎 PR。
 
-## 特性
+## 目录
+
+- [特性](#features)
+- [工作原理](#how-it-works)
+- [安装](#install)
+- [配置](#config)
+- [使用](#usage)
+- [添加一个 shell（注册方式）](#add-shell)
+- [添加一个 compositor（目前需改代码）](#add-compositor)
+- [限制](#limits)
+- [License](#license)
+
+## <a id="features"></a>特性
 
 - **一条命令切换**：`shell-switcher set <name>`，内部 stop-all → 等待退出 → start 目标
 - **声明式注册 shell**：改 `config.toml` 即可添加 shell，无需改代码、无需重编译
@@ -16,7 +36,7 @@
 - **Shell 补全**：bash / zsh / fish 补全随 Nix 包自动安装，cargo/源码安装手动放置（见「安装」）
 - **国际化**：中文 / 英文按系统 locale 自动切换（locale 含 `zh` → 中文，其他 → 英文）
 
-## 工作原理
+## <a id="how-it-works"></a>工作原理
 
 每个 shell 是一个 **systemd user service**（挂 `graphical-session.target` 上下文）。`config.toml` 声明 `name → service` 映射，切换器只做启停编排，不管理 shell 的安装。
 
@@ -30,7 +50,7 @@
 
 任一步失败自动回退默认 shell。被 SIGTERM 停掉的 shell（如 DMS 退出码 143）应在其 service 里配 `SuccessExitStatus=143`，这样 systemd 不把它标为 failed。
 
-## 安装
+## <a id="install"></a>安装
 
 shell-switcher 是普通 Rust 二进制，不依赖 Nix。要求 Rust 工具链（edition 2021），依赖仅 `serde` + `toml`，任何有 systemd user session + Hyprland/niri 的发行版都能用。
 
@@ -90,7 +110,7 @@ home.packages = [
 ];
 ```
 
-## 配置
+## <a id="config"></a>配置
 
 配置文件：`~/.config/shell-switcher/config.toml`。缺失或解析失败时命令会明确报错（提示配置文件路径），不静默使用内置假设。
 
@@ -116,7 +136,7 @@ service = "dms.service"
 
 `current` 标记文件：`~/.config/shell-switcher/current`（`set` 写入、`boot` 读取，内容是当前 shell 名）。
 
-## 使用
+## <a id="usage"></a>使用
 
 ```bash
 shell-switcher list               # 列出 config.toml 里注册的 shell
@@ -140,7 +160,7 @@ shell-switcher set noctalia
 shell-switcher boot
 ```
 
-## 添加一个 shell（注册方式）
+## <a id="add-shell"></a>添加一个 shell（注册方式）
 
 shell 的注册**完全声明式**，加一行 `[[shell]]` 即可，无需改代码：
 
@@ -160,7 +180,7 @@ service = "my-shell.service"
 - 所有 shell 应互相**互斥**（同一时刻只能一个在跑）：可切换的 shell 的 service `wantedBy` 要置空，**不自动起**，由切换器启停；默认 shell 用 `WantedBy=graphical-session.target` 自动起。
 - service 要能干净退出：配 `KillMode=control-group`（连 QML 子进程一起终止）、必要时 `SuccessExitStatus=143`（被 SIGTERM 停不标 failed）。
 
-## 添加一个 compositor（目前需改代码）
+## <a id="add-compositor"></a>添加一个 compositor（目前需改代码）
 
 compositor 检测目前是**硬编码**的，不支持配置。`detect_compositor()` 只认两个环境变量：
 
@@ -187,13 +207,13 @@ fn detect_compositor() -> Option<&'static str> {
 
 后续如果希望 compositor 列表也配置化，可考虑把检测条件挪进 `config.toml`（当前未实现）。
 
-## 限制
+## <a id="limits"></a>限制
 
 - 只支持 Hyprland / niri（compositor 检测硬编码，见上节）
 - 假定所有 shell service 都挂在 `graphical-session.target` 上下文下
 - 停止/启动超时固定（10s / 15s），未做配置化
 - 切换是"stop 全部 → start 目标"，不是"目标先起再停旧的"，切换期间有短暂空窗
 
-## License
+## <a id="license"></a>License
 
-项目尚未声明 License（`Cargo.toml` 无 `license` 字段）。托管前建议补充，例如在 `Cargo.toml` 加 `license = "MIT"` 并放置对应 LICENSE 文件。
+MIT License —— 见 [LICENSE](LICENSE)。
