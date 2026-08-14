@@ -195,7 +195,8 @@ fn read_current() -> Option<String> {
 
 fn list() -> ExitCode {
     for s in load_shells() {
-        println!("  {}", s.name);
+        // 无缩进输出：bash/zsh/fish 补全直接消费 list 输出，前导空格会被转义成 \ \
+        println!("{}", s.name);
     }
     ExitCode::SUCCESS
 }
