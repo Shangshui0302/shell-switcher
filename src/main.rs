@@ -271,7 +271,11 @@ fn set(target: &str) -> ExitCode {
     if !start_service(&target_entry.service) {
         eprintln!(
             "{}",
-            t!("start_failed", target = target, default = default_name(&shells))
+            t!(
+                "start_failed",
+                target = target,
+                default = default_name(&shells)
+            )
         );
         if let Some(d) = default_shell(&shells).cloned() {
             let _ = start_service(&d.service);
@@ -336,7 +340,11 @@ fn help() -> ExitCode {
         .unwrap_or("-");
     println!(
         "{}",
-        t!("help_text", config = config_path().display(), default = default)
+        t!(
+            "help_text",
+            config = config_path().display(),
+            default = default
+        )
     );
     ExitCode::SUCCESS
 }
